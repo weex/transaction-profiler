@@ -82,7 +82,7 @@ def process_block(data, provider):
             if num_out == 3:
                 population_max_fraction3.append( float(max_value)/total_value )
 
-            if num_out in num_outs.keys():
+            if num_out in max_fraction.keys():
                 max_fraction[num_out] = max_fraction[num_out] + float(max_value)/total_value
             else:
                 max_fraction[num_out] = float(max_value)/total_value
@@ -226,26 +226,23 @@ def save_block_info(provider, live, blockindex, unconf):
             from rpc import RPC
             rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
             block_hash = best_block_hash = rpc.get('getbestblockhash')['output']['result']
+            block = rpc.get('getblock',[block_hash])['output']['result']
+            height = block['height']
             if blockindex == 'unprocessed':
                 con=mysql.connector.connect(user=MYSQL_USER,
                                             password=MYSQL_PASSWORD,
                                             database=MYSQL_DATABASE)
                 cur=con.cursor()
-                cur.execute('select max(height) from block')
-                for row in cur.fetchall():
-                    max_height = row[0]
-                    height = max_height + 1
-                    block_hash = rpc.get('getblockhash',[height])['output']['result']
-                    if block_hash == best_block_hash:
+                while 1:
+                    cur.execute('select * from block where height = %s' % height)
+                    if cur.fetchall():
+                        height = height - 1
+                    else:
                         break
 
-                cur.execute('select min(height) from block')
-                for row in cur.fetchall():
-                    min_height = row[0]
-                    height = min_height - 1
-                    block_hash = rpc.get('getblockhash',[height])['output']['result']
-                    if height < 485839:
-                        return
+                block_hash = rpc.get('getblockhash',[height])['output']['result']
+                if height < 485839:
+                    return
 
                 con.close()
 
@@ -304,6 +301,7 @@ def save_block_info(provider, live, blockindex, unconf):
     con.close()
 
     print json.dumps(stats)
+    return height, block_hash
 
 
 if __name__ == '__main__':
