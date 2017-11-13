@@ -225,21 +225,29 @@ def save_block_info(provider, live, blockindex, unconf):
         else:
             from rpc import RPC
             rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
-            if blockindex == 'last':
-                block_hash = rpc.get('getbestblockhash')['output']['result']
-            elif blockindex == 'unprocessed':
+            block_hash = best_block_hash = rpc.get('getbestblockhash')['output']['result']
+            if blockindex == 'unprocessed':
                 con=mysql.connector.connect(user=MYSQL_USER,
                                             password=MYSQL_PASSWORD,
                                             database=MYSQL_DATABASE)
                 cur=con.cursor()
                 cur.execute('select max(height) from block')
                 for row in cur.fetchall():
+                    max_height = row[0]
+                    height = max_height + 1
+                    block_hash = rpc.get('getblockhash',[height])['output']['result']
+                    if block_hash == best_block_hash:
+                        break
+
+                cur.execute('select min(height) from block')
+                for row in cur.fetchall():
                     min_height = row[0]
-                    height = min_height + 1
-                    if height == 0:
-                        sys.exit()
+                    height = min_height - 1
+                    block_hash = rpc.get('getblockhash',[height])['output']['result']
+                    if height < 485839:
+                        return
+
                 con.close()
-                block_hash = rpc.get('getblockhash',[height])['output']['result']
 
             block = rpc.get('getblock',[block_hash])['output']['result']
             height = block['height']
