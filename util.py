@@ -25,10 +25,10 @@ def read_transaction(native_tx,source):
         our_tx['inputs'] = native_tx['inputs']
         our_tx['out'] = native_tx['out']
         our_tx['id'] = native_tx['tx_index']
-        for out in our_tx['inputs']:
-            if 'prev_out' in out:
-                out['prev_id'] = out['prev_out']['tx_index']
-                out['value'] = out['prev_out']['value']
+        for inp in our_tx['inputs']:
+            if 'prev_out' in inp:
+                inp['prev_id'] = inp['prev_out']['tx_index']
+                inp['value'] = inp['prev_out']['value']
     else: # bitcoind
         our_tx['inputs'] = native_tx['vin']
         our_tx['out'] = native_tx['vout']
@@ -36,6 +36,11 @@ def read_transaction(native_tx,source):
         for inp in our_tx['inputs']:
             if 'txid' in inp:
                 inp['prev_id'] = inp['txid']
+        for out in our_tx['out']:
+            if ('scriptPubKey' in out and
+                'addresses' in out['scriptPubKey'] and
+                len(out['scriptPubKey']['addresses']) == 1):
+                out['addr'] = out['scriptPubKey']['addresses'][0]
 
     our_tx['size'] = native_tx['size']
 

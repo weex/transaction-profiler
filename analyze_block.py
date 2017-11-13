@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# standard usage - grabs latest block from blockchain.info and does analysis on it
+# standard usage - grabs latest block from local bitcoind via rpc and does analysis on it
 #
 #     python analyze_block.py --live=true
 
@@ -159,7 +159,7 @@ def process_block(data):
     matched = 0
     for tx in data['tx']:
         if tx['leftover_count'] >= len(param) and debug:
-            print "https://blockchain.info/tx/%s %d %d in %0.8f out %0.8f totin %0.8f totout %0.8f lo %d" % (tx['hash'],tx['num_in'],tx['num_out'],tx['max_in_value'],tx['max_value'],tx['total_in_value'],tx['total_value'],tx['leftover_count'])
+            print "https://blockchain.info/tx/%s %d %d in %0.8f out %0.8f totin %0.8f totout %0.8f lo %d" % (tx['id'],tx['num_in'],tx['num_out'],tx['max_in_value'],tx['max_value'],tx['total_in_value'],tx['total_value'],tx['leftover_count'])
             matched += 1
     if debug:
         print "Matched: " + str(matched)
@@ -175,7 +175,7 @@ if __name__ == '__main__':
             help="Process only unconfirmed transactions")
     parser.add_option("--blockindex", dest="blockindex", default="last",
             help="Choose block by index")
-    parser.add_option("--provider", dest="provider", default="blockchaininfo",
+    parser.add_option("--provider", dest="provider", default="bitcoind",
             help="Choose from 'blockchaininfo' and 'bitcoind'")
     parser.add_option("--verbose", dest="verbose", default=False,
             help="Get data from server")
@@ -242,7 +242,6 @@ if __name__ == '__main__':
             f.write(json.dumps(raw))
             f.close()
         else:
-            #d = Daemon()
             from rpc import RPC
             rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
             block_hash = rpc.get('getbestblockhash')['output']['result']
