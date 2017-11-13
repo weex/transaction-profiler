@@ -8,15 +8,9 @@ import sys
 import json
 import optparse
 import urllib
-import numpy
+import mysql.connector
 
-import matplotlib 
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-from pprint import pprint
 from param import param
-from operator import itemgetter
 
 from util import *
 from settings import *
@@ -28,8 +22,17 @@ debug = DEBUG
 # created in the same block. Calculates the relative average and standard deviation of the size 
 # of the largest output for two and three output transactions. Calculates the independent
 # distributions of transactions by number of inputs and number of outputs.
-def process_block(data):
+def process_block(data, provider):
     json_out = {}
+
+    population_max_fraction2 = []
+    population_max_fraction3 = []
+    population_max_in_fraction_all = []
+    num_outs = {}
+    num_ins = {}
+    max_fraction = {}
+    fees = []
+    feesperkb = []
 
     total_tx = 0
     has_fee = 0
@@ -151,7 +154,7 @@ def process_block(data):
 
     i = 0
     while i < len(param):
-        json_out.update(run_filter(data, param[i], options.provider))
+        json_out.update(run_filter(data, param[i], provider))
         i += 1
 
     if debug:
@@ -166,43 +169,21 @@ def process_block(data):
 
     return json_out
 
-
-if __name__ == '__main__':
-    parser = optparse.OptionParser(usage="%prog [options]")
-    parser.add_option("--live", dest="live", default=True,
-            help="Get data from server")
-    parser.add_option("--unconf", dest="unconf", default=False,
-            help="Process only unconfirmed transactions")
-    parser.add_option("--blockindex", dest="blockindex", default="last",
-            help="Choose block by index")
-    parser.add_option("--provider", dest="provider", default="bitcoind",
-            help="Choose from 'blockchaininfo' and 'bitcoind'")
-    parser.add_option("--verbose", dest="verbose", default=False,
-            help="Get data from server")
-    (options, args) = parser.parse_args()
-
-    num_outs = {}
-    num_ins = {}
-    max_fraction = {}
-    population_max_fraction2 = []
-    population_max_fraction3 = []
-    fees = []
-    feesperkb = []
-    population_max_in_fraction_all = []
+def save_block_info(provider, live, blockindex, unconf):
     data = {}
 
     # obtain data to process
-    if options.live or options.unconf:
+    if live or unconf:
         raw = ''
-        if options.provider == 'blockchaininfo':
-            if options.blockindex != "last":
-                url = "https://blockchain.info/block-height/" + str(options.blockindex) + "?format=json"
-            elif options.unconf:
+        if provider == 'blockchaininfo':
+            if blockindex != "last":
+                url = "https://blockchain.info/block-height/" + str(blockindex) + "?format=json"
+            elif unconf:
                 url = "https://blockchain.info/unconfirmed-transactions?format=json&offset="
             else:
                 url = "https://blockchain.info/latestblock"
                 
-            if not options.unconf:
+            if not unconf:
                 response = urllib.urlopen(url);
                 raw = response.read()
                 parsed = json.loads(raw)
@@ -216,8 +197,8 @@ if __name__ == '__main__':
                     parsed = json.loads(raw)
                     txs = txs + parsed['txs']
                     
-            if options.blockindex != "last" or options.unconf:
-                if not options.unconf:
+            if blockindex != "last" or unconf:
+                if not unconf:
                     height = parsed['blocks'][0]['height']
                     block_hash = parsed['blocks'][0]['hash']    
                     data = parsed['blocks'][0]
@@ -238,16 +219,32 @@ if __name__ == '__main__':
 
                 data = parsed
                 
-            f = open("blocks/"+str(height)+"-"+options.provider+"-"+block_hash+".txt", "w")
+            f = open("blocks/"+str(height)+"-"+provider+"-"+block_hash+".txt", "w")
             f.write(json.dumps(raw))
             f.close()
         else:
             from rpc import RPC
             rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
-            block_hash = rpc.get('getbestblockhash')['output']['result']
+            if blockindex == 'last':
+                block_hash = rpc.get('getbestblockhash')['output']['result']
+            elif blockindex == 'unprocessed':
+                con=mysql.connector.connect(user=MYSQL_USER,
+                                            password=MYSQL_PASSWORD,
+                                            database=MYSQL_DATABASE)
+                cur=con.cursor()
+                cur.execute('select max(height) from block')
+                for row in cur.fetchall():
+                    min_height = row[0]
+                    height = min_height + 1
+                    if height == 0:
+                        sys.exit()
+                con.close()
+                block_hash = rpc.get('getblockhash',[height])['output']['result']
+
             block = rpc.get('getblock',[block_hash])['output']['result']
             height = block['height']
             block_hash = block['hash']
+            block_time = block['time']
             data['tx'] = []
             inptx_cache = {}
             for txid in block['tx']:
@@ -267,7 +264,7 @@ if __name__ == '__main__':
                         inp['value'] = inptx['vout'][inp['vout']]['value']
                 data['tx'].append(tx)
     else:
-        if options.provider == 'blockchaininfo':
+        if provider == 'blockchaininfo':
             the_file = '000000000000000016bae92da911065f77e52e65c7c5d164ee12b57247176ab0.json'
         else:
             the_file = 'last'
@@ -277,7 +274,42 @@ if __name__ == '__main__':
 
     normalized_data = {'tx':[]}
     for tx in data['tx']:
-        normalized_data['tx'].append(read_transaction(tx, options.provider))
+        normalized_data['tx'].append(read_transaction(tx, provider))
 
-    stats = process_block(normalized_data)
+    stats = process_block(normalized_data, provider)
+
+    con=mysql.connector.connect(user=MYSQL_USER,
+                            password=MYSQL_PASSWORD,
+                            database=MYSQL_DATABASE)
+    cur=con.cursor()
+    insertstmt=("insert into block (created, time, height, hash) values (now(), FROM_UNIXTIME(%s), '%s', '%s')" % (block_time, height, block_hash))
+    cur.execute(insertstmt)
+
+    for key in stats.keys():
+        val = stats[key]
+        if isinstance(val, dict) and 'count' in val:
+            val = val['count']
+        cur.execute("insert into block_info (created, time, height, hash, metric, value) values (now(), FROM_UNIXTIME(%s), '%s', '%s', '%s', '%s')" % 
+                (block_time, height, block_hash, key, val))
+
+    con.commit()
+    con.close()
+
     print json.dumps(stats)
+
+
+if __name__ == '__main__':
+    parser = optparse.OptionParser(usage="%prog [options]")
+    parser.add_option("--live", dest="live", default=True,
+            help="Get data from server")
+    parser.add_option("--unconf", dest="unconf", default=False,
+            help="Process only unconfirmed transactions")
+    parser.add_option("--blockindex", dest="blockindex", default="last",
+            help="Choose block by index")
+    parser.add_option("--provider", dest="provider", default="bitcoind",
+            help="Choose from 'blockchaininfo' and 'bitcoind'")
+    parser.add_option("--verbose", dest="verbose", default=False,
+            help="Get data from server")
+    (options, args) = parser.parse_args()
+
+    save_block_info(options.provider, options.live, options.blockindex, options.unconf)
