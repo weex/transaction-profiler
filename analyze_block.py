@@ -253,6 +253,7 @@ def save_block_info(provider, live, blockindex, unconf):
             data['tx'] = []
             inptx_cache = {}
             for txid in block['tx']:
+                rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
                 rawtx = rpc.get('getrawtransaction',[txid])['output']['result']
                 tx = rpc.get('decoderawtransaction',[rawtx])['output']['result']
                 for inp in tx['vin']:
