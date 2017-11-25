@@ -1,6 +1,5 @@
-from analyze_block import save_block_info    
+from analyze_block import save_block_info
 from time import time
-
 
 while 1:
     start = time()

@@ -2,10 +2,11 @@ import requests
 import json
 from time import sleep
 
+
 class RPC(object):
     def __init__(self, username, password, server, port):
         self.url = "http://%s:%s@%s:%s/" % (username, password, server, port)
-        self.headers = {'content-type': 'application/json'}
+        self.headers = {'content-type': 'application/json', 'Connection':'close'}
         self.session = requests.Session()
 
     def get(self, command, params=None):
@@ -17,13 +18,7 @@ class RPC(object):
             "jsonrpc": "2.0",
             "id": 0}
 
-        #for i in range(3):
-            #try:
-        out = self.session.post(self.url, data=json.dumps(payload), headers=self.headers).json()
-            #    break
-            #except:
-            #    print "retrying rpc"
-            #    sleep(10)
+        out = requests.post(self.url, data=json.dumps(payload), headers=self.headers).json()
 
         try:
             res = json.loads(out)

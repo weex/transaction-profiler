@@ -228,6 +228,7 @@ def save_block_info(provider, live, blockindex, unconf):
             block_hash = best_block_hash = rpc.get('getbestblockhash')['output']['result']
             block = rpc.get('getblock',[block_hash])['output']['result']
             height = block['height']
+
             if blockindex == 'unprocessed':
                 con=mysql.connector.connect(user=MYSQL_USER,
                                             password=MYSQL_PASSWORD,
@@ -241,34 +242,42 @@ def save_block_info(provider, live, blockindex, unconf):
                         break
 
                 block_hash = rpc.get('getblockhash',[height])['output']['result']
-                if height < 485839:
-                    return
 
                 con.close()
+            else:
+                height = blockindex
+                block_hash = rpc.get('getblockhash',[blockindex])['output']['result']
+
 
             block = rpc.get('getblock',[block_hash])['output']['result']
             height = block['height']
             block_hash = block['hash']
             block_time = block['time']
             data['tx'] = []
-            inptx_cache = {}
+            tx_cache = {}
             for txid in block['tx']:
-                rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
                 rawtx = rpc.get('getrawtransaction',[txid])['output']['result']
                 tx = rpc.get('decoderawtransaction',[rawtx])['output']['result']
+                if txid not in tx_cache:
+                    tx_cache[txid] = tx
+
+            for txid in block['tx']:
+                rpc = RPC(RPCUSER, RPCPASS, SERVER, RPCPORT)
+                tx = tx_cache[txid]
                 for inp in tx['vin']:
                     if 'txid' not in inp:
                         continue
-                    if inp['txid'] not in inptx_cache:
+                    if inp['txid'] not in tx_cache:
                         rawtx = rpc.get('getrawtransaction',[inp['txid']])['output']['result']
                         inptx = rpc.get('decoderawtransaction',[rawtx])['output']['result']
-                        inptx_cache[inp['txid']] = inptx
+                        tx_cache[inp['txid']] = inptx
                     else:
-                        inptx = inptx_cache[inp['txid']]
+                        inptx = tx_cache[inp['txid']]
                     #TODO: deal with nonstandard transaction inputs whose transactions don't seem to have enough outputs
                     if inp['vout'] < len(inptx['vout']):
                         inp['value'] = inptx['vout'][inp['vout']]['value']
                 data['tx'].append(tx)
+
     else:
         if provider == 'blockchaininfo':
             the_file = '000000000000000016bae92da911065f77e52e65c7c5d164ee12b57247176ab0.json'
