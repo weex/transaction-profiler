@@ -246,8 +246,7 @@ def save_block_info(provider, live, blockindex, unconf):
                 con.close()
             else:
                 height = blockindex
-                block_hash = rpc.get('getblockhash',[blockindex])['output']['result']
-
+                block_hash = rpc.get('getblockhash',[int(blockindex)])['output']['result']
 
             block = rpc.get('getblock',[block_hash])['output']['result']
             height = block['height']
